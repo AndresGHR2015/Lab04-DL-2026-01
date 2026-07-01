@@ -114,6 +114,38 @@ Los experimentos están definidos en `config/experiments.yaml`:
 
 Validación y prueba usan solo imágenes reales. Las imágenes generadas se mezclan únicamente con el conjunto de entrenamiento.
 
+## Búsqueda simple de hiperparámetros
+
+El laboratorio incluye un barrido pequeño y explícito en `config/experiments.yaml`, bajo la clave `hyperparameter_sweeps`.
+
+Para ver los barridos disponibles:
+
+```bash
+python3 main.py sweep --list
+```
+
+Para revisar los comandos sin ejecutarlos:
+
+```bash
+python3 main.py --dry-run sweep --name quick_multitask
+```
+
+Para ejecutar el barrido:
+
+```bash
+python3 main.py sweep --name quick_multitask
+```
+
+El barrido `quick_multitask` prueba pocas combinaciones didácticas sobre el experimento base `E00_real_only`, por ejemplo:
+
+- `losses.lambda_age: 0.5`
+- `losses.lambda_age: 1.0`
+- `losses.lambda_age: 2.0`
+- `training.learning_rate: 0.0005` con `multitask_model.dropout: 0.2`
+- `training.learning_rate: 0.001` con `multitask_model.dropout: 0.5`
+
+Cada corrida se guarda como un experimento independiente, por ejemplo `hp_lambda_age_05`, `hp_lambda_age_10` o `hp_lr_001_dropout_05`.
+
 ## Métricas
 
 El laboratorio reporta métricas separadas por tarea:

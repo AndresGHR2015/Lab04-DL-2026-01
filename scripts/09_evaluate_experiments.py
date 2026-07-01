@@ -22,6 +22,8 @@ from src.utils.file_utils import ensure_dir, write_csv, write_json
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evalúa experimentos.")
     parser.add_argument("--config", default="config/path.yaml")
+    parser.add_argument("--defaults", default="config/default.yaml")
+    parser.add_argument("--experiments", default="config/experiments.yaml")
     parser.add_argument("--experiment", action="append")
     args = parser.parse_args()
 
@@ -30,7 +32,7 @@ def main() -> int:
 
     from src.models.model_factory import build_multitask_model
 
-    config = load_config(args.config)
+    config = load_config(args.config, args.defaults, args.experiments)
     device = resolve_device(config["project"]["device"])
     experiments = args.experiment or [item["name"] for item in config["experiments"]]
     test_rows = build_eval_rows(config, "test")

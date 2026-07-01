@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 from src.config import load_config
+from src.config.load_config import deep_merge, read_yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -38,6 +42,21 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("minimal", help="Ejecuta el flujo mínimo del laboratorio.")
     subparsers.add_parser("extended", help="Ejecuta la extensión VAE/GAN del laboratorio.")
     subparsers.add_parser("all", help="Ejecuta flujo mínimo y extendido.")
+    sweep_parser = subparsers.add_parser(
+        "sweep",
+        help="Ejecuta un barrido simple de hiperparámetros definido en YAML.",
+    )
+    sweep_parser.add_argument("--name", default="quick_multitask")
+    sweep_parser.add_argument(
+        "--list",
+        action="store_true",
+        help="Lista los barridos disponibles sin ejecutar.",
+    )
+    sweep_parser.add_argument(
+        "--no-evaluate",
+        action="store_true",
+        help="Entrena las corridas del barrido, pero no evalúa automáticamente.",
+    )
 
     train_parser = subparsers.add_parser("train", help="Entrena uno o más experimentos.")
     train_parser.add_argument(
@@ -89,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     if command == "all":
         first = run_minimal(args)
         return first if first else run_extended(args)
+    if command == "sweep":
+        return list_sweeps(args) if args.list else run_sweep(args)
 
     parser.error(f"Comando no reconocido: {command}")
     return 2
@@ -122,6 +143,27 @@ def list_experiments(args: argparse.Namespace) -> int:
     return 0
 
 
+def list_sweeps(args: argparse.Namespace) -> int:
+    """Lista barridos de hiperparámetros definidos en YAML."""
+
+    config = load_config(args.config, args.defaults, args.experiments)
+    sweeps = config.get("hyperparameter_sweeps", [])
+    if not sweeps:
+        print("No hay barridos definidos en YAML.")
+        return 0
+
+    print("Barridos de hiperparámetros")
+    print("-" * 96)
+    for sweep in sweeps:
+        print(
+            f"{sweep['name']:<24} base={sweep['base_experiment']:<20} "
+            f"corridas={len(sweep.get('runs', []))}"
+        )
+        if sweep.get("description"):
+            print(f"  {sweep['description']}")
+    return 0
+
+
 def run_prepare(args: argparse.Namespace) -> int:
     return run_script(
         "scripts/01_prepare_dataset.py",
@@ -141,7 +183,16 @@ def run_train(args: argparse.Namespace, experiments: list[str]) -> int:
     for experiment in experiments:
         code = run_script(
             "scripts/08_train_multitask.py",
-            ["--config", args.config, "--experiment", experiment],
+            [
+                "--config",
+                args.config,
+                "--defaults",
+                args.defaults,
+                "--experiments",
+                args.experiments,
+                "--experiment",
+                experiment,
+            ],
             dry_run=args.dry_run,
         )
         if code:
@@ -150,10 +201,120 @@ def run_train(args: argparse.Namespace, experiments: list[str]) -> int:
 
 
 def run_evaluate(args: argparse.Namespace, experiments: list[str] | None) -> int:
-    command_args = ["--config", args.config]
+    command_args = [
+        "--config",
+        args.config,
+        "--defaults",
+        args.defaults,
+        "--experiments",
+        args.experiments,
+    ]
     for experiment in experiments or []:
         command_args.extend(["--experiment", experiment])
     return run_script("scripts/09_evaluate_experiments.py", command_args, dry_run=args.dry_run)
+
+
+def run_sweep(args: argparse.Namespace) -> int:
+    """Ejecuta un barrido pequeño de hiperparámetros con overrides YAML."""
+
+    config = load_config(args.config, args.defaults, args.experiments)
+    sweep = find_sweep(config, args.name)
+    base_experiment = find_experiment(config, sweep["base_experiment"])
+    runs = sweep.get("runs", [])
+    if not runs:
+        raise ValueError(f"El barrido {args.name} no contiene corridas.")
+
+    generated_dir = PROJECT_ROOT / "outputs" / "sweeps" / args.name / "configs"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    for run in runs:
+        run_name = run["name"]
+        generated_config, generated_experiments = write_sweep_run_files(
+            args,
+            generated_dir,
+            base_experiment,
+            run,
+        )
+        code = run_script(
+            "scripts/08_train_multitask.py",
+            [
+                "--config",
+                str(generated_config),
+                "--defaults",
+                args.defaults,
+                "--experiments",
+                str(generated_experiments),
+                "--experiment",
+                run_name,
+            ],
+            dry_run=args.dry_run,
+        )
+        if code:
+            return code
+
+        if not args.no_evaluate:
+            code = run_script(
+                "scripts/09_evaluate_experiments.py",
+                [
+                    "--config",
+                    str(generated_config),
+                    "--defaults",
+                    args.defaults,
+                    "--experiments",
+                    str(generated_experiments),
+                    "--experiment",
+                    run_name,
+                ],
+                dry_run=args.dry_run,
+            )
+            if code:
+                return code
+    return 0
+
+
+def find_sweep(config: dict, name: str) -> dict:
+    """Busca un barrido por nombre."""
+
+    for sweep in config.get("hyperparameter_sweeps", []):
+        if sweep["name"] == name:
+            return sweep
+    raise KeyError(f"Barrido no definido: {name}")
+
+
+def find_experiment(config: dict, name: str) -> dict:
+    """Busca un experimento por nombre."""
+
+    for experiment in config.get("experiments", []):
+        if experiment["name"] == name:
+            return experiment
+    raise KeyError(f"Experimento no definido: {name}")
+
+
+def write_sweep_run_files(
+    args: argparse.Namespace,
+    generated_dir: Path,
+    base_experiment: dict,
+    run: dict,
+) -> tuple[Path, Path]:
+    """Materializa YAML temporales para una corrida del barrido."""
+
+    run_name = run["name"]
+    config_override = deep_merge(read_yaml(args.config), run.get("overrides", {}))
+    experiment = deepcopy(base_experiment)
+    experiment["name"] = run_name
+    experiment = deep_merge(experiment, run.get("experiment_overrides", {}))
+
+    config_path = generated_dir / f"{run_name}_path.yaml"
+    experiments_path = generated_dir / f"{run_name}_experiments.yaml"
+    config_path.write_text(
+        yaml.safe_dump(config_override, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    experiments_path.write_text(
+        yaml.safe_dump({"experiments": [experiment]}, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return config_path, experiments_path
 
 
 def run_cae(args: argparse.Namespace) -> int:
@@ -225,4 +386,3 @@ def run_script(script: str, args: list[str], *, dry_run: bool = False) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

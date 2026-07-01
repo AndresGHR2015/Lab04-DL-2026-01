@@ -6,6 +6,7 @@ outputs/**/*.pt
 outputs/**/*.png
 outputs/**/*.csv
 outputs/**/*.json
+outputs/sweeps/
 data/metadata/*.csv
 data/generated/**/*.png
 presentation/

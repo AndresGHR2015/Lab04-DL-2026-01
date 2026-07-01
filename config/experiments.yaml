@@ -54,3 +54,40 @@ experiments:
     use_cae: false
     use_vae: true
     use_gan: true
+
+hyperparameter_sweeps:
+  - name: quick_multitask
+    description: Barrido pequeño para estudiar pesos de pérdidas, learning rate y dropout.
+    base_experiment: E00_real_only
+    runs:
+      - name: hp_lambda_age_05
+        overrides:
+          losses:
+            lambda_gender: 1.0
+            lambda_age: 0.5
+
+      - name: hp_lambda_age_10
+        overrides:
+          losses:
+            lambda_gender: 1.0
+            lambda_age: 1.0
+
+      - name: hp_lambda_age_20
+        overrides:
+          losses:
+            lambda_gender: 1.0
+            lambda_age: 2.0
+
+      - name: hp_lr_0005_dropout_02
+        overrides:
+          training:
+            learning_rate: 0.0005
+          multitask_model:
+            dropout: 0.2
+
+      - name: hp_lr_001_dropout_05
+        overrides:
+          training:
+            learning_rate: 0.001
+          multitask_model:
+            dropout: 0.5

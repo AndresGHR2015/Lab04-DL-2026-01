@@ -23,6 +23,8 @@ from src.utils.file_utils import ensure_dir
 def main() -> int:
     parser = argparse.ArgumentParser(description="Entrena modelo multitarea.")
     parser.add_argument("--config", default="config/path.yaml")
+    parser.add_argument("--defaults", default="config/default.yaml")
+    parser.add_argument("--experiments", default="config/experiments.yaml")
     parser.add_argument("--experiment", default="E00_real_only")
     args = parser.parse_args()
 
@@ -31,7 +33,7 @@ def main() -> int:
     from src.models.model_factory import build_multitask_model
     from src.training.train_multitask import train_multitask_model
 
-    config = load_config(args.config)
+    config = load_config(args.config, args.defaults, args.experiments)
     experiment = find_experiment(config, args.experiment)
     device = resolve_device(config["project"]["device"])
     train_rows = build_training_rows(config, args.experiment)
