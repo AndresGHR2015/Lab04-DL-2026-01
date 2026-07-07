@@ -53,6 +53,7 @@ class MultiTaskLoss(nn.Module):
 def vae_loss(reconstruction, images, mu, logvar, beta: float = 1.0):
     """Calcula reconstrucción más divergencia KL."""
 
+    reconstruction = F.interpolate(reconstruction, size=(128, 128), mode='bilinear', align_corners=False)
     reconstruction_loss = F.mse_loss(reconstruction, images, reduction="mean")
     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
     return reconstruction_loss + beta * kl_loss, reconstruction_loss, kl_loss

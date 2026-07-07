@@ -20,6 +20,7 @@ def train_cae(model, loader, config: dict, device, output_path):
             images = batch["image"].to(device)
             optimizer.zero_grad()
             reconstruction = model(images)
+            reconstruction = F.interpolate(reconstruction, size=(128, 128), mode='bilinear', align_corners=False)
             loss = F.mse_loss(reconstruction, images)
             loss.backward()
             optimizer.step()

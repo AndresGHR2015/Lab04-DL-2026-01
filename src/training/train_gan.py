@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 def train_gan(generator, discriminator, loader, config: dict, device, output_dir):
@@ -49,6 +50,7 @@ def train_gan(generator, discriminator, loader, config: dict, device, output_dir
             opt_g.zero_grad()
             noise = torch.randn(batch_size, latent_dim, 1, 1, device=device)
             fake = generator(noise)
+            fake = F.interpolate(fake, size=(128, 128), mode='bilinear', align_corners=False)
             g_loss = criterion(discriminator(fake), real_targets)
             g_loss.backward()
             opt_g.step()
